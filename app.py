@@ -7,18 +7,25 @@ from config import MONGO_URI, DB_NAME, JWT_SECRET_KEY, SECRET_KEY
 from flask_cors import CORS
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from bson.objectid import ObjectId
+import traceback
+
 
 app = Flask(__name__)
 CORS(app)
 
 # ✅ Konfigurasi MongoDB
-app.config["MONGO_URI"] = f"{MONGO_URI}/{DB_NAME}"
+app.config["MONGO_URI"] = MONGO_URI
 app.config['SECRET_KEY'] = SECRET_KEY  # Pastikan SECRET_KEY ada di config
 app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
 
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    print(traceback.format_exc())  # print error lengkap di terminal
+    return jsonify({"error": str(e)}), 500
 
 @app.route('/register', methods=['POST'])
 def register():
