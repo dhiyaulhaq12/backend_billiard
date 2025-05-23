@@ -138,6 +138,7 @@ def get_user():
     if not user:
         return jsonify({'message': 'User tidak ditemukan'}), 404
 
+    #ini response user
     user_data = {
         'id': str(user['_id']),
         'username': user['username'],
