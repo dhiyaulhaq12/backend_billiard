@@ -77,9 +77,9 @@ def register():
     return jsonify({'message': 'OTP telah dikirim ke email kamu'}), 200
 
 # =================== VERIFIKASI OTP ====================
-@app.route('/verify-otp', methods=['POST'])
+@app.route('/otp', methods=['POST'])
 # =================== VERIFIKASI OTP ====================
-@app.route('/verify-otp', methods=['POST'])
+@app.route('/otp', methods=['POST'])
 def verify_otp():
     data = request.get_json()
     email = data.get('email')
@@ -151,6 +151,3 @@ def get_user():
 # =================== RUN APP ====================
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-
-
-
