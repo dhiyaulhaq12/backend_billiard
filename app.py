@@ -69,6 +69,9 @@ def register():
     'otp_expiry': datetime.datetime.utcnow() + datetime.timedelta(minutes=5),  # OTP berlaku 5 menit
     'created_at': datetime.datetime.utcnow()
     }
+    
+    print("=== DATA YANG DIINSERT ===")
+    print(user_data)
 
     mongo.db.users.insert_one(user_data)
 
@@ -80,9 +83,7 @@ def register():
     return jsonify({'message': 'OTP telah dikirim ke email kamu'}), 200
 
 # =================== VERIFIKASI OTP ====================
-@app.route('/verify-otp', methods=['POST'])
-# =================== VERIFIKASI OTP ====================
-@app.route('/verify-otp', methods=['POST'])
+@app.route('/otp', methods=['POST'])
 def verify_otp():
     data = request.get_json()
     email = data.get('email')
@@ -95,21 +96,24 @@ def verify_otp():
     if user['is_verified']:
         return jsonify({'message': 'Akun sudah terverifikasi'}), 400
 
-    # ⛔ Cek apakah OTP sudah expired
     if datetime.datetime.utcnow() > user.get('otp_expiry', datetime.datetime.utcnow()):
         return jsonify({'message': 'OTP telah kedaluwarsa, silakan daftar ulang'}), 400
+    
+    print(f"OTP dari input: {otp_input}")
+    print(f"OTP dari database: {user['otp']}")
 
-    # ❌ Cek apakah OTP salah
-    if user['otp'] != otp_input:
+
+    if str(user['otp']) != str(otp_input):
         return jsonify({'message': 'Kode OTP salah'}), 401
 
-    # ✅ Verifikasi sukses
     mongo.db.users.update_one(
         {'_id': user['_id']},
         {'$set': {'is_verified': True}, '$unset': {'otp': "", 'otp_expiry': ""}}
     )
 
     return jsonify({'message': 'Verifikasi berhasil. Silakan login.'}), 200
+
+
 
 # =================== LOGIN ====================
 @app.route('/login', methods=['POST'])
@@ -194,6 +198,3 @@ def update_profile(user_id):
 # =================== RUN APP ====================
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-
-
-
