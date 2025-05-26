@@ -5,7 +5,8 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from flask_mail import Mail, Message
 from flask_cors import CORS
 from bson.objectid import ObjectId
-import datetime
+from werkzeug.security import generate_password_hash
+from datetime import datetime, timedelta
 import random
 import string
 import traceback
@@ -31,6 +32,8 @@ mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
 mail = Mail(app)
+
+datetime.utcnow()
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -126,7 +129,7 @@ def login():
     if not user.get('is_verified'):
         return jsonify({'message': 'Akun belum diverifikasi. Cek email OTP kamu.'}), 403
 
-    access_token = create_access_token(identity=str(user['_id']), expires_delta=datetime.timedelta(hours=1))
+    access_token = create_access_token(identity=str(user['_id']), expires_delta=timedelta(hours=1))
 
     return jsonify({
         'access_token': access_token,
@@ -139,10 +142,11 @@ def login():
 def get_user():
     user_id = get_jwt_identity()
     user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+
     if not user:
         return jsonify({'message': 'User tidak ditemukan'}), 404
 
-    #ini response user
+    # response user
     user_data = {
         'id': str(user['_id']),
         'username': user['username'],
@@ -150,7 +154,46 @@ def get_user():
         'created_at': user['created_at'].strftime('%Y-%m-%d %H:%M:%S')
     }
 
-    return jsonify({'data': user_data}), 200
+    return jsonify({'user': user_data}), 200
+
+@app.route('/<user_id>/update', methods=['PATCH'])
+def update_profile(user_id):
+    users_collection = mongo.db.users
+
+    try:
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+    except Exception:
+        return jsonify({'message': 'Invalid user ID'}), 400
+
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    username = request.form.get('username')
+    password = request.form.get('password')
+
+    update_data = {'updated_at': datetime.utcnow()}
+
+    if username:
+        update_data['username'] = username
+
+    if password:
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        update_data['password'] = hashed_password
+
+    users_collection.update_one({'_id': ObjectId(user_id)}, {'$set': update_data})
+
+    updated_user = users_collection.find_one({'_id': ObjectId(user_id)})
+
+    return jsonify({
+        'message': 'Profile updated successfully',
+        'user': {
+            'id': str(updated_user['_id']),
+            'username': updated_user.get('username'),
+            'email': updated_user.get('email'),
+            'created_at': updated_user.get('created_at'),
+            'updated_at': updated_user.get('updated_at')
+        }
+    }), 200
 
 @app.route('/', methods=["GET"])
 def hello ():
