@@ -66,9 +66,9 @@ def register():
     'password': hashed_password,
     'is_verified': False,
     'otp': otp,
-    'otp_expiry': datetime.datetime.utcnow() + datetime.timedelta(minutes=5),  # OTP berlaku 5 menit
-    'created_at': datetime.datetime.utcnow()
-    }
+    'otp_expiry': datetime.utcnow() + timedelta(minutes=1),  # OTP berlaku 1 menit
+    'created_at': datetime.utcnow()
+}
     
     print("=== DATA YANG DIINSERT ===")
     print(user_data)
@@ -135,6 +135,43 @@ def login():
         'access_token': access_token,
         'message': 'Login berhasil'
     }), 200
+
+@app.route('/resend-otp', methods=['POST'])
+def resend_otp():
+    data = request.get_json()
+    email = data.get('email')
+
+    user = mongo.db.users.find_one({'email': email})
+    if not user:
+        return jsonify({'message': 'User tidak ditemukan'}), 404
+
+    if user['is_verified']:
+        return jsonify({'message': 'Akun sudah diverifikasi'}), 400
+
+    now = datetime.utcnow()  # perbaikan di sini
+    otp_expiry = user.get('otp_expiry', now)
+
+    # Pastikan hanya bisa request OTP baru jika OTP sebelumnya sudah expired
+    if now < otp_expiry:
+        sisa_detik = int((otp_expiry - now).total_seconds())
+        return jsonify({'message': f'Harap tunggu {sisa_detik} detik untuk kirim ulang OTP'}), 400
+
+    # Buat OTP baru dan update di database
+    new_otp = generate_otp()
+    new_expiry = now + timedelta(minutes=1)  # perbaikan di sini
+
+    mongo.db.users.update_one(
+        {'_id': user['_id']},
+        {'$set': {'otp': new_otp, 'otp_expiry': new_expiry}}
+    )
+
+    # Kirim ulang email OTP
+    msg = Message('Kode OTP Baru', sender=MAIL_USERNAME, recipients=[email])
+    msg.body = f"Kode OTP terbaru kamu adalah: {new_otp}. Jangan berikan kepada siapa pun."
+    mail.send(msg)
+
+    return jsonify({'message': 'Kode OTP baru telah dikirim ke email kamu'}), 200
+
 
 # =================== GET USER (PROTECTED) ====================
 @app.route('/user', methods=['GET'])
