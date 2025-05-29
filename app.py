@@ -96,7 +96,7 @@ def verify_otp():
     if user['is_verified']:
         return jsonify({'message': 'Akun sudah terverifikasi'}), 400
 
-    if datetime.datetime.utcnow() > user.get('otp_expiry', datetime.datetime.utcnow()):
+    if datetime.utcnow() > user.get('otp_expiry', datetime.utcnow()):
         return jsonify({'message': 'OTP telah kedaluwarsa, silakan daftar ulang'}), 400
     
     print(f"OTP dari input: {otp_input}")
