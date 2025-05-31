@@ -13,6 +13,7 @@ import traceback
 from config import MONGO_URI, SECRET_KEY, JWT_SECRET_KEY, MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_USE_TLS
 import os
 from werkzeug.utils import secure_filename
+import cloudinary.uploader
 
 app = Flask(__name__)
 CORS(app)
@@ -134,9 +135,13 @@ def login():
     access_token = create_access_token(identity=str(user['_id']), expires_delta=timedelta(hours=1))
 
     return jsonify({
+        'success': True,
+        'message': 'Login berhasil',
         'access_token': access_token,
-        'message': 'Login berhasil'
+        'user_id': str(user['_id']),
+        'username': user.get('username', '')  # pastikan username ada
     }), 200
+
 
 @app.route('/resend-otp', methods=['POST'])
 def resend_otp():
@@ -209,6 +214,7 @@ def update_profile(user_id):
 
     username = request.form.get('username')
     password = request.form.get('password')
+    old_password = request.form.get('old_password')  # ← password lama dari inputan user
     file = request.files.get('profile_picture')
 
     update_data = {'updated_at': datetime.utcnow()}
@@ -217,8 +223,16 @@ def update_profile(user_id):
         update_data['username'] = username
 
     if password:
+        if not old_password:
+            return jsonify({'message': 'Password lama wajib diisi'}), 400
+
+        # Verifikasi old_password cocok dengan yang di database
+        if not bcrypt.check_password_hash(user['password'], old_password):
+            return jsonify({'message': 'Password lama salah'}), 401
+
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
         update_data['password'] = hashed_password
+
 
     if file:
         # Simpan file di folder 'uploads' (buat dulu folder uploads di project kamu)
