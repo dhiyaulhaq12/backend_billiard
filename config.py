@@ -10,3 +10,4 @@ MAIL_USE_TLS = True
 MAIL_USERNAME = '123akbargunawan@gmail.com'
 MAIL_PASSWORD = 'xfuh psez saun yxsn'
 MAIL_DEFAULT_SENDER = 'emailanda@gmail.com'
+
