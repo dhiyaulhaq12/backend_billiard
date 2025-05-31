@@ -11,6 +11,8 @@ import random
 import string
 import traceback
 from config import MONGO_URI, SECRET_KEY, JWT_SECRET_KEY, MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_USE_TLS
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 CORS(app)
@@ -207,6 +209,7 @@ def update_profile(user_id):
 
     username = request.form.get('username')
     password = request.form.get('password')
+    file = request.files.get('profile_picture')
 
     update_data = {'updated_at': datetime.utcnow()}
 
@@ -216,6 +219,15 @@ def update_profile(user_id):
     if password:
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
         update_data['password'] = hashed_password
+
+    if file:
+        # Simpan file di folder 'uploads' (buat dulu folder uploads di project kamu)
+        filename = secure_filename(file.filename)
+        upload_path = os.path.join('uploads', filename)
+        file.save(upload_path)
+
+        url_path = f"/uploads/{filename}"
+        update_data['profile_picture'] = url_path
 
     users_collection.update_one({'_id': ObjectId(user_id)}, {'$set': update_data})
 
@@ -227,10 +239,12 @@ def update_profile(user_id):
             'id': str(updated_user['_id']),
             'username': updated_user.get('username'),
             'email': updated_user.get('email'),
+            'profile_picture': updated_user.get('profile_picture'),  # sertakan di response
             'created_at': updated_user.get('created_at'),
             'updated_at': updated_user.get('updated_at')
         }
     }), 200
+
 
 @app.route('/', methods=["GET"])
 def hello ():
