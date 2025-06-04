@@ -14,6 +14,8 @@ from config import MONGO_URI, SECRET_KEY, JWT_SECRET_KEY, MAIL_SERVER, MAIL_PORT
 import os
 from werkzeug.utils import secure_filename
 import cloudinary.uploader
+import cloudinary
+from config import cloudinary_config
 
 app = Flask(__name__)
 CORS(app)
@@ -30,6 +32,13 @@ app.config['MAIL_USERNAME'] = MAIL_USERNAME
 app.config['MAIL_PASSWORD'] = MAIL_PASSWORD
 app.config['MAIL_USE_TLS'] = MAIL_USE_TLS
 app.config['MAIL_USE_SSL'] = False
+
+cloudinary.config(
+    cloud_name=cloudinary_config["cloud_name"],
+    api_key=cloudinary_config["api_key"],
+    api_secret=cloudinary_config["api_secret"],
+    secure=True
+)
 
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
@@ -214,7 +223,7 @@ def update_profile(user_id):
 
     username = request.form.get('username')
     password = request.form.get('password')
-    old_password = request.form.get('old_password')  # ← password lama dari inputan user
+    old_password = request.form.get('old_password')
     file = request.files.get('profile_picture')
 
     update_data = {'updated_at': datetime.utcnow()}
@@ -226,22 +235,19 @@ def update_profile(user_id):
         if not old_password:
             return jsonify({'message': 'Password lama wajib diisi'}), 400
 
-        # Verifikasi old_password cocok dengan yang di database
         if not bcrypt.check_password_hash(user['password'], old_password):
             return jsonify({'message': 'Password lama salah'}), 401
 
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
         update_data['password'] = hashed_password
 
-
     if file:
-        # Simpan file di folder 'uploads' (buat dulu folder uploads di project kamu)
-        filename = secure_filename(file.filename)
-        upload_path = os.path.join('uploads', filename)
-        file.save(upload_path)
-
-        url_path = f"/uploads/{filename}"
-        update_data['profile_picture'] = url_path
+        try:
+            upload_result = cloudinary.uploader.upload(file, folder="profile_pictures")
+            image_url = upload_result.get("secure_url")
+            update_data['profile_picture'] = image_url
+        except Exception as e:
+            return jsonify({'message': f'Gagal upload gambar: {str(e)}'}), 500
 
     users_collection.update_one({'_id': ObjectId(user_id)}, {'$set': update_data})
 
@@ -253,11 +259,19 @@ def update_profile(user_id):
             'id': str(updated_user['_id']),
             'username': updated_user.get('username'),
             'email': updated_user.get('email'),
-            'profile_picture': updated_user.get('profile_picture'),  # sertakan di response
+            'profile_picture': updated_user.get('profile_picture'),
             'created_at': updated_user.get('created_at'),
             'updated_at': updated_user.get('updated_at')
         }
     }), 200
+    
+@app.route('/videos', methods=['GET'])
+def get_videos():
+    videos_collection = mongo.db.youtube_billiard
+    videos = list(videos_collection.find({}, {"_id": 0, "title": 1, "description": 1, "link": 1, "channel": 1}))
+    return jsonify(videos)
+
+
 
 
 @app.route('/', methods=["GET"])

@@ -11,3 +11,9 @@ MAIL_USERNAME = '123akbargunawan@gmail.com'
 MAIL_PASSWORD = 'xfuh psez saun yxsn'
 MAIL_DEFAULT_SENDER = 'emailanda@gmail.com'
 
+
+cloudinary_config = {
+    "cloud_name":"dyukn4qlh",
+    "api_key":"162327632796155",
+    "api_secret":"n9yk84VIw7Eevk28dNcLyEfdjkg",
+}
