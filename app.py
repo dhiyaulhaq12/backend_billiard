@@ -204,6 +204,7 @@ def get_user():
         'id': str(user['_id']),
         'username': user['username'],
         'email': user['email'],
+        'profile_picture': user.get('profile_picture'),
         'created_at': user['created_at'].strftime('%Y-%m-%d %H:%M:%S')
     }
 
