@@ -148,7 +148,7 @@ def login():
         'message': 'Login berhasil',
         'access_token': access_token,
         'user_id': str(user['_id']),
-        'username': user.get('username', '')  # pastikan username ada
+        'username': user.get('username', '')
     }), 200
 
 
