@@ -133,6 +133,8 @@ def login():
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
+    platform = data.get('platform', 'unknown')
+    ip_address = request.remote_addr or request.environ.get('HTTP_X_FORWARDED_FOR', '127.0.0.1')
 
     user = mongo.db.users.find_one({'email': email})
     if not user or not bcrypt.check_password_hash(user['password'], password):
@@ -142,6 +144,16 @@ def login():
         return jsonify({'message': 'Akun belum diverifikasi. Cek email OTP kamu.'}), 403
 
     access_token = create_access_token(identity=str(user['_id']), expires_delta=timedelta(hours=1))
+    
+    mongo.db.login_logs.insert_one({
+        'user_id': str(user['_id']),
+        'platform': platform,
+        'ip_address': ip_address,
+        'status': 'login',
+        'login_time': datetime.utcnow(),
+        'last_activity': datetime.utcnow(),
+        'logout_time': None
+    })
 
     return jsonify({
         'success': True,
@@ -150,6 +162,138 @@ def login():
         'user_id': str(user['_id']),
         'username': user.get('username', '')
     }), 200
+
+
+@app.route('/activity', methods=['POST'])
+@jwt_required()
+def update_activity():
+    user_id = get_jwt_identity()
+    ip_address = request.remote_addr or request.environ.get('HTTP_X_FORWARDED_FOR', '127.0.0.1')
+    platform = request.json.get('platform', 'unknown')
+
+    mongo.db.login_logs.update_one(
+        {
+            'user_id': user_id,
+            'platform': platform,
+            'ip_address': ip_address,
+            'status': 'login',
+            'logout_time': None
+        },
+        {
+            '$set': {
+                'last_activity': datetime.utcnow()
+            }
+        }
+    )
+    return jsonify({'message': 'Aktivitas terakhir diperbarui'}), 200
+
+@app.route('/activity/<log_id>', methods=['DELETE'])
+@jwt_required()
+def delete_activity_log(log_id):
+    try:
+        user_id = get_jwt_identity()
+        print(f"Delete single log - User ID: {user_id}, Log ID: {log_id}")
+        
+        # Validasi user_id
+        if not user_id:
+            return jsonify({'message': 'User ID tidak ditemukan dalam token'}), 422
+        
+        # Validasi ObjectId
+        try:
+            object_id = ObjectId(log_id)
+        except Exception as e:
+            print(f"Invalid ObjectId: {e}")
+            return jsonify({'message': 'ID log tidak valid'}), 400
+        
+        # Cari dan hapus log berdasarkan _id dan user_id (untuk security)
+        result = mongo.db.login_logs.delete_one({
+            '_id': object_id,
+            'user_id': user_id
+        })
+        
+        print(f"Delete result - Deleted count: {result.deleted_count}")
+        
+        if result.deleted_count == 0:
+            return jsonify({'message': 'Log aktivitas tidak ditemukan atau Anda tidak memiliki akses'}), 404
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Log aktivitas berhasil dihapus'
+        }), 200
+        
+    except Exception as e:
+        print(f"Error deleting single log: {str(e)}")
+        return jsonify({'message': f'Terjadi kesalahan: {str(e)}'}), 500
+
+# Endpoint untuk delete all activity logs untuk user tertentu
+@app.route('/activity/all', methods=['DELETE'])
+@jwt_required()
+def delete_all_activity_logs():
+    try:
+        user_id = get_jwt_identity()
+        print(f"Delete all logs - User ID: {user_id}")
+        
+        # Validasi user_id
+        if not user_id:
+            return jsonify({'message': 'User ID tidak ditemukan dalam token'}), 422
+        
+        # Hapus semua logs untuk user ini
+        result = mongo.db.login_logs.delete_many({'user_id': user_id})
+        
+        print(f"Delete all result - Deleted count: {result.deleted_count}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Berhasil menghapus {result.deleted_count} log aktivitas',
+            'deleted_count': result.deleted_count
+        }), 200
+        
+    except Exception as e:
+        print(f"Error deleting all logs: {str(e)}")
+        return jsonify({'message': f'Terjadi kesalahan: {str(e)}'}), 500
+
+# Perbaikan untuk endpoint GET (menambahkan field 'id')
+@app.route('/activity', methods=['GET'])
+@jwt_required()
+def get_activity_logs():
+    try:
+        user_id = get_jwt_identity()
+        print(f"User ID dari JWT: {user_id}")
+        
+        # Validasi user_id
+        if not user_id:
+            return jsonify({'message': 'User ID tidak ditemukan dalam token'}), 422
+        
+        # Cari logs berdasarkan user_id
+        logs = list(mongo.db.login_logs.find({'user_id': user_id}))
+        print(f"Jumlah logs ditemukan: {len(logs)}")
+        
+        # Proses setiap log
+        processed_logs = []
+        for log in logs:
+            processed_log = {
+                'id': str(log['_id']),  # Tambahkan field 'id' untuk frontend
+                '_id': str(log['_id']),
+                'user_id': log.get('user_id'),
+                'platform': log.get('platform', 'Unknown'),
+                'login_time': log['login_time'].isoformat() if log.get('login_time') else None,
+                'last_activity': log['last_activity'].isoformat() if log.get('last_activity') else None,
+                'logout_time': log['logout_time'].isoformat() if log.get('logout_time') else None,
+                'ip_address': log.get('ip_address', 'Unknown'),
+                'user_agent': log.get('user_agent', 'Unknown')
+            }
+            processed_logs.append(processed_log)
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Berhasil mengambil {len(processed_logs)} log aktivitas',
+            'logs': processed_logs
+        }), 200
+        
+    except Exception as e:
+        print(f"Error getting activity logs: {str(e)}")
+        return jsonify({'message': f'Terjadi kesalahan: {str(e)}'}), 500
+
 
 
 @app.route('/resend-otp', methods=['POST'])
@@ -271,6 +415,50 @@ def get_videos():
     videos_collection = mongo.db.youtube_billiard
     videos = list(videos_collection.find({}, {"_id": 0, "title": 1, "description": 1, "link": 1, "channel": 1}))
     return jsonify(videos)
+
+@app.route('/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    print("=== LOGOUT ENDPOINT DIPANGGIL ===")
+    user_id = get_jwt_identity()
+    ip_address = request.remote_addr or request.environ.get('HTTP_X_FORWARDED_FOR', '127.0.0.1')
+    platform = request.json.get('platform', 'unknown')
+    
+    print(f"User ID: {user_id}")
+    print(f"IP Address: {ip_address}")
+    print(f"Platform: {platform}")
+
+    # Temukan login log terbaru berdasarkan user_id, ip, dan platform
+    latest_log = mongo.db.login_logs.find_one(
+        {
+            'user_id': user_id,
+            'platform': platform,
+            'ip_address': ip_address,
+            'status': 'login',
+            'logout_time': None
+        },
+        sort=[('login_time', -1)]
+    )
+    
+    print(f"Latest log found: {latest_log}")
+
+    if latest_log:
+        print(f"Updating log with ID: {latest_log['_id']}")
+        result = mongo.db.login_logs.update_one(
+            {'_id': latest_log['_id']},
+            {
+                '$set': {
+                    'status': 'logout',
+                    'logout_time': datetime.utcnow(),
+                    'last_activity': datetime.utcnow()
+                }
+            }
+        )
+        print(f"Update result: {result.modified_count} documents modified")
+    else:
+        print("No matching login log found!")
+
+    return jsonify({'message': 'Logout berhasil'}), 200
 
 
 
