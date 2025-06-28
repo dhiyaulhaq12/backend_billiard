@@ -16,6 +16,11 @@ from werkzeug.utils import secure_filename
 import cloudinary.uploader
 import cloudinary
 from config import cloudinary_config
+import base64
+import io
+from PIL import Image
+
+
 
 app = Flask(__name__)
 CORS(app)
@@ -409,6 +414,94 @@ def update_profile(user_id):
             'updated_at': updated_user.get('updated_at')
         }
     }), 200
+    
+@app.route('/riwayat', methods=['POST'])
+@jwt_required()
+def save_riwayat():
+    data = request.json
+    required = ['label', 'accuracy', 'timestamp', 'image_url']
+
+    if not all(k in data for k in required):
+        return jsonify({'success': False, 'message': 'Data tidak lengkap'}), 400
+
+    user_id = get_jwt_identity()
+
+    riwayat = {
+        'user_id': user_id,
+        'label': data['label'],
+        'accuracy': data['accuracy'],
+        'timestamp': data['timestamp'],  # biarkan string
+        'image_url': data['image_url']
+    }
+
+    mongo.db.riwayat_latihan.insert_one(riwayat)
+
+    return jsonify({'success': True, 'message': 'Riwayat berhasil disimpan'}), 200
+
+@app.route('/riwayat', methods=['GET'])
+@jwt_required()
+def get_riwayat():
+    user_id = get_jwt_identity()
+    data = list(mongo.db.riwayat_latihan.find({'user_id': user_id}))
+    
+    processed = []
+    for item in data:
+        processed.append({
+            'id': str(item['_id']),  # ID ini untuk DELETE nanti
+            'label': item.get('label'),
+            'accuracy': item.get('accuracy'),
+            'timestamp': item.get('timestamp'),
+            'image_url': item.get('image_url')
+        })
+    
+    return jsonify({'success': True, 'data': processed}), 200
+
+@app.route('/riwayat/<log_id>', methods=['DELETE'])
+@jwt_required()
+def delete_pose_log(log_id):
+    try:
+        user_id = get_jwt_identity()
+        if not user_id:
+            return jsonify({'message': 'User ID tidak ditemukan dalam token'}), 422
+
+        try:
+            object_id = ObjectId(log_id)
+        except Exception:
+            return jsonify({'message': 'ID log tidak valid'}), 400
+
+        result = mongo.db.riwayat_latihan.delete_one({
+            '_id': object_id,
+            'user_id': user_id
+        })
+
+        if result.deleted_count == 0:
+            return jsonify({'message': 'Riwayat tidak ditemukan atau Anda tidak memiliki akses'}), 404
+
+        return jsonify({'status': 'success', 'message': 'Riwayat berhasil dihapus'}), 200
+
+    except Exception as e:
+        return jsonify({'message': f'Terjadi kesalahan: {str(e)}'}), 500
+
+@app.route('/riwayat/all', methods=['DELETE'])
+@jwt_required()
+def delete_all_pose_logs():
+    try:
+        user_id = get_jwt_identity()
+        if not user_id:
+            return jsonify({'message': 'User ID tidak ditemukan dalam token'}), 422
+
+        result = mongo.db.riwayat_latihan.delete_many({'user_id': user_id})
+        return jsonify({
+            'status': 'success',
+            'message': f'Berhasil menghapus {result.deleted_count} riwayat',
+            'deleted_count': result.deleted_count
+        }), 200
+
+    except Exception as e:
+        return jsonify({'message': f'Terjadi kesalahan: {str(e)}'}), 500
+
+
+
     
 @app.route('/videos', methods=['GET'])
 def get_videos():
