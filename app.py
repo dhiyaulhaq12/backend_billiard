@@ -167,6 +167,55 @@ def login():
         'user_id': str(user['_id']),
         'username': user.get('username', '')
     }), 200
+    
+@app.route('/login/google', methods=['POST'])
+def login_google():
+    data = request.get_json()
+    email = data.get('email')
+    name = data.get('name') or 'Pengguna Google'
+    platform = data.get('platform', 'unknown')
+    ip_address = request.remote_addr or request.environ.get('HTTP_X_FORWARDED_FOR', '127.0.0.1')
+
+    if not email:
+        return jsonify({'message': 'Email Google tidak ditemukan'}), 400
+
+    # Cari user berdasarkan email
+    user = mongo.db.users.find_one({'email': email})
+
+    # Kalau belum terdaftar, buat akun baru otomatis (bisa kamu hilangkan kalau mau user daftar dulu)
+    if not user:
+        new_user = {
+            'email': email,
+            'username': name,
+            'password': '',  # kosong karena pakai Google
+            'is_verified': True,
+            'created_at': datetime.utcnow()
+        }
+        inserted = mongo.db.users.insert_one(new_user)
+        user_id = str(inserted.inserted_id)
+    else:
+        user_id = str(user['_id'])
+
+    access_token = create_access_token(identity=user_id, expires_delta=timedelta(hours=1))
+
+    # Simpan history login seperti login manual
+    mongo.db.login_logs.insert_one({
+        'user_id': user_id,
+        'platform': platform,
+        'ip_address': ip_address,
+        'status': 'login',
+        'login_time': datetime.utcnow(),
+        'last_activity': datetime.utcnow(),
+        'logout_time': None
+    })
+
+    return jsonify({
+        'success': True,
+        'message': 'Login Google berhasil',
+        'access_token': access_token,
+        'user_id': user_id,
+        'username': name
+    }), 200    
 
 
 @app.route('/activity', methods=['POST'])
@@ -191,6 +240,32 @@ def update_activity():
         }
     )
     return jsonify({'message': 'Aktivitas terakhir diperbarui'}), 200
+
+@app.route('/google-activity', methods=['POST'])
+def log_google_login():
+    data = request.get_json()
+    email = data.get('email')
+    platform = data.get('platform', 'Google Login')
+    ip_address = request.remote_addr or request.environ.get('HTTP_X_FORWARDED_FOR', '127.0.0.1')
+
+    # Cari user di database berdasarkan email
+    user = mongo.db.users.find_one({'email': email})
+    if not user:
+        return jsonify({'success': False, 'message': 'User dengan email ini tidak ditemukan'}), 404
+
+    # Simpan log login ke login_logs
+    mongo.db.login_logs.insert_one({
+        'user_id': str(user['_id']),
+        'platform': platform,
+        'ip_address': ip_address,
+        'status': 'login',
+        'login_time': datetime.utcnow(),
+        'last_activity': datetime.utcnow(),
+        'logout_time': None
+    })
+
+    return jsonify({'success': True, 'message': 'Log aktivitas Google login berhasil disimpan'}), 200
+
 
 @app.route('/activity/<log_id>', methods=['DELETE'])
 @jwt_required()
@@ -516,24 +591,24 @@ def logout():
     user_id = get_jwt_identity()
     ip_address = request.remote_addr or request.environ.get('HTTP_X_FORWARDED_FOR', '127.0.0.1')
     platform = request.json.get('platform', 'unknown')
-    
+
     print(f"User ID: {user_id}")
     print(f"IP Address: {ip_address}")
     print(f"Platform: {platform}")
 
-    # Temukan login log terbaru berdasarkan user_id, ip, dan platform
+    filter_query = {
+        'user_id': user_id,
+        'platform': platform,
+        'status': 'login',
+        'logout_time': None
+    }
+
+    print("Filter query:", filter_query)
+
     latest_log = mongo.db.login_logs.find_one(
-        {
-            'user_id': user_id,
-            'platform': platform,
-            'ip_address': ip_address,
-            'status': 'login',
-            'logout_time': None
-        },
+        filter_query,
         sort=[('login_time', -1)]
     )
-    
-    print(f"Latest log found: {latest_log}")
 
     if latest_log:
         print(f"Updating log with ID: {latest_log['_id']}")
@@ -552,6 +627,7 @@ def logout():
         print("No matching login log found!")
 
     return jsonify({'message': 'Logout berhasil'}), 200
+
 
 
 
